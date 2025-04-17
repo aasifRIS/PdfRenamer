@@ -3,6 +3,7 @@ import os
 import shutil
 from datetime import datetime
 import time
+import zipfile
 
 st.set_page_config(page_title="📁 PDF ReNinja", layout="centered")
 
@@ -43,6 +44,16 @@ def rename_and_copy_pdfs(src_folder):
 
     return renamed_folder, len(pdfs)
 
+def zip_folder(folder_path):
+    zip_path = folder_path + ".zip"
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, _, files in os.walk(folder_path):
+            for file in files:
+                full_path = os.path.join(root, file)
+                arcname = os.path.relpath(full_path, folder_path)
+                zipf.write(full_path, arcname)
+    return zip_path
+
 def apply_ui_styles():
     st.markdown("""
     <style>
@@ -76,11 +87,14 @@ apply_ui_styles()
 if 'logs' not in st.session_state:
     st.session_state.logs = []
 
+# ---- Title ----
 st.markdown("<h2 style='text-align: center;'>📁 PDF ReNinja</h2>", unsafe_allow_html=True)
 st.caption("Select a folder and automatically rename all PDFs inside subfolders based on their path.")
 
+# ---- Sidebar ----
 with st.sidebar:
     st.markdown("## ⚙️ Settings")
+    mode = st.radio("Run Mode", ["Local", "Deployed"])
     dark_mode = st.toggle("🌙 Enable Dark Mode", value=False)
     if dark_mode:
         st.markdown("""
@@ -97,22 +111,50 @@ with st.sidebar:
         </style>
         """, unsafe_allow_html=True)
 
-# ---- Main UI ----
-folder_path = st.text_input("📂 Enter or paste the full path to your folder:", placeholder="e.g. C:/Users/John/Documents/PDFs")
+# ---- Main Logic ----
+if mode == "Local":
+    folder_path = st.text_input("📂 Enter or paste the full path to your folder:", placeholder="e.g. C:/Users/John/Documents/PDFs")
 
-if folder_path:
-    if not os.path.isdir(folder_path):
-        st.error("🚫 The path entered is not a valid folder.")
-    else:
-        if st.button("🚀 Start Renaming PDFs"):
-            with st.spinner("Scanning and renaming PDFs..."):
-                renamed_folder, total = rename_and_copy_pdfs(folder_path)
-                time.sleep(1)
-                st.success(f"✅ Renamed {total} PDF(s) and saved to: `{renamed_folder}`")
+    if folder_path:
+        if not os.path.isdir(folder_path):
+            st.error("🚫 The path entered is not a valid folder.")
+        else:
+            if st.button("🚀 Start Renaming PDFs"):
+                with st.spinner("Scanning and renaming PDFs..."):
+                    renamed_folder, total = rename_and_copy_pdfs(folder_path)
+                    time.sleep(1)
+                    st.success(f"✅ Renamed {total} PDF(s) and saved to: `{renamed_folder}`")
 
-            if st.session_state.logs:
-                st.markdown("### 📝 Rename Logs")
-                st.markdown(f"<div class='log-box'>{'<br>'.join(st.session_state.logs)}</div>", unsafe_allow_html=True)
+                if st.session_state.logs:
+                    st.markdown("### 📝 Rename Logs")
+                    st.markdown(f"<div class='log-box'>{'<br>'.join(st.session_state.logs)}</div>", unsafe_allow_html=True)
 
-        if st.button("🧹 Clear Logs"):
-            st.session_state.logs.clear()
+            if st.button("🧹 Clear Logs"):
+                st.session_state.logs.clear()
+
+elif mode == "Deployed":
+    folder_input = st.text_input("📁 Enter folder name (inside app directory):", placeholder="e.g. pdfs")
+
+    if folder_input:
+        current_dir = os.path.dirname(__file__)
+        default_folder = os.path.join(current_dir, folder_input)
+
+        if not os.path.exists(default_folder):
+            st.error(f"🚫 Folder '{folder_input}' not found in the app directory.")
+        else:
+            if st.button(f"🚀 Rename PDFs in '{folder_input}'"):
+                with st.spinner("Scanning and renaming PDFs..."):
+                    renamed_folder, total = rename_and_copy_pdfs(default_folder)
+                    time.sleep(1)
+                    st.success(f"✅ Renamed {total} PDF(s) and saved to: `{renamed_folder}`")
+
+                    zip_path = zip_folder(renamed_folder)
+                    with open(zip_path, "rb") as f:
+                        st.download_button("⬇️ Download Renamed PDFs (ZIP)", f, file_name=os.path.basename(zip_path), mime="application/zip")
+
+                if st.session_state.logs:
+                    st.markdown("### 📝 Rename Logs")
+                    st.markdown(f"<div class='log-box'>{'<br>'.join(st.session_state.logs)}</div>", unsafe_allow_html=True)
+
+            if st.button("🧹 Clear Logs"):
+                st.session_state.logs.clear()
