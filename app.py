@@ -6,43 +6,49 @@ import re
 
 st.set_page_config(page_title="Transaction Extractor", layout="wide")
 
-# Header Section
 st.markdown("<h1 style='color:#0e76a8;'>📤 Transaction Extractor</h1>", unsafe_allow_html=True)
 st.caption("Extract **Paid** and **Received** transactions from your HTML file and download them as an Excel sheet.")
 
-uploaded_file = st.file_uploader("Select your HTML file", type=["html"], label_visibility="visible")
+uploaded_file = st.file_uploader("Select your HTML file", type=["html"])
 
 def extract_transaction_data(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
-    data = []
+    all_lines = [div.get_text(strip=True) for div in soup.find_all("div")]
 
-    for div in soup.find_all("div"):
-        text = div.get_text(strip=True)
+    pattern = re.compile(
+        r"(Paid|Received)\s+(₹[\d,]+\.\d{2}).*?(Account\s+[A-Z\dXx]+|\bUPI\b|\bCard\b|\bWallet\b).*?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec.*?)GMT"
+    )
 
-        if 'Paid' in text or 'Received' in text:
-            match = re.search(r"(Paid|Received)\s+(₹[\d,\.]+)\s+.*?(Account\s+\w+|\bUPI\b|\bCard\b|\bWallet\b)[^J]*?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec).*", text)
-            if match:
-                trans_type = match.group(1)
-                amount = match.group(2)
-                account = match.group(3)
-                date_search = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec).*", text)
-                date = date_search.group(0) if date_search else ''
-                data.append({
-                    "Type": trans_type,
+    results = []
+    seen = None
+
+    for line in all_lines:
+        matches = pattern.findall(line)
+        for match in matches:
+            type_, amount, account, date = match
+            record = (type_, amount, account, date)
+
+            # Only add if it's not the same as the last one (consecutive duplicate)
+            if record != seen:
+                seen = record
+                amount_float = float(amount.replace("₹", "").replace(",", ""))
+                results.append({
+                    "Type": type_,
                     "Amount": amount,
                     "Account": account,
-                    "Date": date
+                    "Date": date.strip(),
+                    "AmountFloat": amount_float
                 })
-    return pd.DataFrame(data)
+
+    df = pd.DataFrame(results)
+    return df
 
 def convert_df_to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Transactions")
-        workbook = writer.book
+        df[["Type", "Amount", "Account", "Date"]].to_excel(writer, index=False, sheet_name="Transactions")
         worksheet = writer.sheets["Transactions"]
 
-        # Color coding: Paid = red, Received = green
         for row_idx, value in enumerate(df["Type"], start=2):
             color = "FF0000" if value == "Paid" else "008000"
             worksheet[f"A{row_idx}"].font = worksheet[f"A{row_idx}"].font.copy(color=color)
@@ -51,17 +57,24 @@ def convert_df_to_excel(df):
 
 if uploaded_file is not None:
     try:
-        with st.spinner("🔍 Extracting transactions from file..."):
+        with st.spinner("🔍 Extracting transactions..."):
             html = uploaded_file.read()
             df = extract_transaction_data(html)
 
         if df.empty:
-            st.warning("⚠️ No 'Paid' or 'Received' transactions found in the file.")
+            st.warning("⚠️ No 'Paid' or 'Received' transactions found.")
         else:
-            st.success(f"✅ Successfully extracted {len(df)} transactions.")
+            total_paid = df[df["Type"] == "Paid"]["AmountFloat"].sum()
+            total_received = df[df["Type"] == "Received"]["AmountFloat"].sum()
+            net = total_received - total_paid
 
-            with st.expander("🔎 Preview Extracted Transactions"):
-                st.dataframe(df, use_container_width=True)
+            st.subheader("💰 Transaction Summary")
+            st.metric("Total Paid", f"₹{total_paid:,.2f}")
+            st.metric("Total Received", f"₹{total_received:,.2f}")
+            st.metric("Net", f"₹{net:,.2f}")
+
+            with st.expander("🔎 Preview Transactions"):
+                st.dataframe(df[["Type", "Amount", "Account", "Date"]], use_container_width=True)
 
             st.divider()
             col1, col2 = st.columns([1, 3])
@@ -78,6 +91,5 @@ if uploaded_file is not None:
 
     except Exception as e:
         st.error(f"❌ Error: {e}")
-
 else:
-    st.info("📁 Upload a Activity HTML file to begin.")
+    st.info("📁 Upload a file to begin.")
