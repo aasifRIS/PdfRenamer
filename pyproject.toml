@@ -8,6 +8,16 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.12"
 streamlit = "^1.44.1"
+pandas = "^2.2.3"
+openpyxl = "^3.1.5"
+numpy = "^1.24.0"
+nibabel = "^5.3.2"
+pydicom = "^3.0.1"
+matplotlib = "^3.10.1"
+torchvision = "^0.22.0"
+monai = "^1.4.0"
+torch = "^2.7.0"
+plotly = "^6.0.1"
 
 
 [build-system]
