@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import json
 from io import BytesIO
 
 # Custom CSS for better appearance
@@ -27,40 +26,43 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 style='color:#0e76a8;'>📄 JSON to Excel Converter</h1>", unsafe_allow_html=True)
-st.markdown("Upload your **JSON file** and download it instantly as an **Excel file**.")
+st.markdown("<h1 style='color:#0e76a8;'>📄 HTML Table to Excel Converter</h1>", unsafe_allow_html=True)
+st.markdown("Upload an **HTML file** with one or more `<table>` elements. This app will convert them into an Excel workbook.")
 
-uploaded_file = st.file_uploader("📤 Upload your JSON file", type=["json"])
+uploaded_file = st.file_uploader("📤 Upload your HTML file", type=["html", "htm"])
 
 if uploaded_file is not None:
     try:
-        json_data = json.load(uploaded_file)
+        # Read all tables from HTML
+        tables = pd.read_html(uploaded_file)
 
-        # Normalize nested JSON
-        df = pd.json_normalize(json_data)
+        if not tables:
+            st.warning("⚠️ No tables found in the HTML file.")
+        else:
+            st.success(f"✅ Found {len(tables)} table(s) in the HTML file!")
 
-        st.success("✅ JSON file successfully uploaded and processed!")
+            for idx, table in enumerate(tables):
+                st.markdown(f"### 👁️ Preview of Table {idx + 1}")
+                st.dataframe(table, use_container_width=True)
 
-        st.markdown("### 👁️ Preview of Data")
-        st.dataframe(df, use_container_width=True)
+            def convert_tables_to_excel(tables):
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    for i, table in enumerate(tables):
+                        sheet_name = f"Table_{i+1}"
+                        table.to_excel(writer, index=False, sheet_name=sheet_name)
+                return output.getvalue()
 
-        def convert_df_to_excel(df):
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Sheet1')
-            processed_data = output.getvalue()
-            return processed_data
+            with st.spinner("🔄 Converting tables to Excel..."):
+                excel_data = convert_tables_to_excel(tables)
 
-        with st.spinner("🔄 Converting to Excel..."):
-            excel_data = convert_df_to_excel(df)
-
-        st.markdown("### 📥 Download Your Excel File")
-        st.download_button(
-            label="⬇️ Download Excel",
-            data=excel_data,
-            file_name="converted_data.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+            st.markdown("### 📥 Download Your Excel File")
+            st.download_button(
+                label="⬇️ Download Excel",
+                data=excel_data,
+                file_name="converted_tables.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
     except Exception as e:
-        st.error(f"❌ Error processing file: {e}")
+        st.error(f"❌ Error processing HTML file: {e}")
